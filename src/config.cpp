@@ -420,6 +420,9 @@ N64Recomp::Config::Config(const char* path) {
             trace_mode = false;
         }
 
+        // Emit code for a 32-bit gpr runtime (optional)
+        gpr_32bit = input_data["gpr_32bit"].value_or(false);
+
         // Function reference symbols file (optional)
         std::optional<std::string> func_reference_syms_file_opt = input_data["func_reference_syms_file"].value<std::string>();
         if (func_reference_syms_file_opt.has_value()) {

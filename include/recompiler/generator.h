@@ -65,7 +65,7 @@ namespace N64Recomp {
 
     class CGenerator final : Generator {
     public:
-        CGenerator(std::ostream& output_file) : output_file(output_file) {};
+        CGenerator(std::ostream& output_file, bool gpr_32bit = false) : output_file(output_file), gpr_32bit(gpr_32bit) {};
         void process_binary_op(const BinaryOp& op, const InstructionContext& ctx) const final;
         void process_unary_op(const UnaryOp& op, const InstructionContext& ctx) const final;
         void process_store_op(const StoreOp& op, const InstructionContext& ctx) const final;
@@ -103,6 +103,7 @@ namespace N64Recomp {
         void get_binary_expr_string(BinaryOpType type, const BinaryOperands& operands, const InstructionContext& ctx, const std::string& output, std::string& expr_string) const;
         void get_notation(BinaryOpType op_type, std::string& func_string, std::string& infix_string) const;
         std::ostream& output_file;
+        bool gpr_32bit;
     };
 }
 

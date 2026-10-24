@@ -263,6 +263,10 @@ namespace N64Recomp {
         // Causes functions to print their name to the console the first time they're called.
         bool trace_mode;
 
+        // Emits code for a runtime whose gpr type is 32 bits wide. Instructions that need the upper half of a
+        // 64-bit GPR (ld, sd, dsll, dmult, dmfc1, ...) are rejected instead of being recompiled.
+        bool gpr_32bit = false;
+
         // Imports sections and function symbols from a provided context into this context's reference sections and reference functions.
         bool import_reference_context(const Context& reference_context);
         // Reads a data symbol file and adds its contents into this context's reference data symbols.

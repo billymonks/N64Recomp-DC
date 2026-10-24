@@ -242,13 +242,13 @@ void N64Recomp::CGenerator::get_operand_string(Operand operand, UnaryOpType oper
             operand_string = "(int32_t)" + operand_string; 
             break;
         case UnaryOpType::NegateFloat:
-            operand_string = "-" + operand_string;
+            operand_string = "NEG_S(" + operand_string + ")";
             break;
         case UnaryOpType::NegateDouble:
             operand_string = "-" + operand_string;
             break;
         case UnaryOpType::AbsFloat:
-            operand_string = "fabsf(" + operand_string + ")";
+            operand_string = "ABS_S(" + operand_string + ")";
             break;
         case UnaryOpType::AbsDouble:
             operand_string = "fabs(" + operand_string + ")";
@@ -395,11 +395,15 @@ void N64Recomp::CGenerator::get_binary_expr_string(BinaryOpType type, const Bina
 void N64Recomp::CGenerator::emit_function_start(const std::string& function_name, size_t func_index) const {
     (void)func_index;
     fmt::print(output_file,
-        "RECOMP_FUNC void {}(uint8_t* rdram, recomp_context* ctx) {{\n"
+        "RECOMP_FUNC void {}({}) {{\n"
         // these variables shouldn't need to be preserved across function boundaries, so make them local for more efficient output
-        "    uint64_t hi = 0, lo = 0, result = 0;\n"
+        "    {}\n"
         "    int c1cs = 0;\n", // cop1 conditional signal
-        function_name);
+        function_name,
+        // The runtime compiles without strict aliasing, so without restrict every store to rdram would make the
+        // compiler reload and re-store the context's registers around it.
+        gpr_32bit ? "uint8_t* restrict rdram, recomp_context* restrict ctx" : "uint8_t* rdram, recomp_context* ctx",
+        gpr_32bit ? "gpr hi = 0, lo = 0; uint64_t result = 0;" : "uint64_t hi = 0, lo = 0, result = 0;");
 }
 
 void N64Recomp::CGenerator::emit_function_end() const {
@@ -524,6 +528,12 @@ void N64Recomp::CGenerator::emit_muldiv(InstrId instr_id, int reg1, int reg2) co
             fmt::print(output_file, "DMULTU(U64({}), U64({}), &lo, &hi);\n", gpr_to_string(reg1), gpr_to_string(reg2));
             break;
         case InstrId::cpu_div:
+            if (gpr_32bit) {
+                // 64-bit division is a libgcc call on 32-bit hosts, so the runtime provides a 32-bit DIV32 that handles
+                // s32(0x80000000) / -1 and division by zero itself.
+                fmt::print(output_file, "DIV32(S32({}), S32({}), &lo, &hi);\n", gpr_to_string(reg1), gpr_to_string(reg2));
+                break;
+            }
             // Cast to 64-bits before division to prevent artihmetic exception for s32(0x80000000) / -1
             fmt::print(output_file, "lo = S32(S64(S32({0})) / S64(S32({1}))); hi = S32(S64(S32({0})) % S64(S32({1})));\n", gpr_to_string(reg1), gpr_to_string(reg2));
             break;
@@ -531,6 +541,10 @@ void N64Recomp::CGenerator::emit_muldiv(InstrId instr_id, int reg1, int reg2) co
             fmt::print(output_file, "DDIV(S64({}), S64({}), &lo, &hi);\n", gpr_to_string(reg1), gpr_to_string(reg2));
             break;
         case InstrId::cpu_divu:
+            if (gpr_32bit) {
+                fmt::print(output_file, "DIVU32(U32({}), U32({}), &lo, &hi);\n", gpr_to_string(reg1), gpr_to_string(reg2));
+                break;
+            }
             fmt::print(output_file, "lo = S32(U32({0}) / U32({1})); hi = S32(U32({0}) % U32({1}));\n", gpr_to_string(reg1), gpr_to_string(reg2));
             break;
         case InstrId::cpu_ddivu:

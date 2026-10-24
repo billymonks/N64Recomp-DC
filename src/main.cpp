@@ -511,6 +511,7 @@ int main(int argc, char** argv) {
 
     // Propogate the trace mode parameter.
     context.trace_mode = config.trace_mode;
+    context.gpr_32bit = config.gpr_32bit;
 
     // Apply any single-instruction patches.
     for (const N64Recomp::InstructionPatch& patch : config.instruction_patches) {

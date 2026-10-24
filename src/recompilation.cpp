@@ -151,6 +151,25 @@ bool process_instruction(GeneratorType& generator, const N64Recomp::Context& con
         instr_id = InstrId::cpu_addiu;
     }
 
+    if (context.gpr_32bit) {
+        static const std::unordered_set<InstrId> gpr64_instrs {
+            InstrId::cpu_dadd, InstrId::cpu_daddu, InstrId::cpu_daddi, InstrId::cpu_daddiu,
+            InstrId::cpu_dsub, InstrId::cpu_dsubu,
+            InstrId::cpu_dsll, InstrId::cpu_dsrl, InstrId::cpu_dsra,
+            InstrId::cpu_dsll32, InstrId::cpu_dsrl32, InstrId::cpu_dsra32,
+            InstrId::cpu_dsllv, InstrId::cpu_dsrlv, InstrId::cpu_dsrav,
+            InstrId::cpu_dmult, InstrId::cpu_dmultu, InstrId::cpu_ddiv, InstrId::cpu_ddivu,
+            InstrId::cpu_ld, InstrId::cpu_ldl, InstrId::cpu_ldr,
+            InstrId::cpu_sd, InstrId::cpu_sdl, InstrId::cpu_sdr,
+            InstrId::cpu_dmfc1, InstrId::cpu_dmtc1,
+        };
+        if (gpr64_instrs.contains(instr_id)) {
+            fmt::print(stderr, "Instruction at 0x{:08X} in {} needs 64-bit GPRs, which gpr_32bit mode doesn't support: {}\n",
+                instr_vram, func.name, instr.disassemble(0));
+            return false;
+        }
+    }
+
     N64Recomp::RelocType reloc_type = N64Recomp::RelocType::R_MIPS_NONE;
     bool has_reloc = false;
     uint32_t reloc_section = 0;
@@ -874,7 +893,7 @@ bool recompile_function_impl(GeneratorType& generator, const N64Recomp::Context&
 
 // Wrap the templated function with CGenerator as the template parameter.
 bool N64Recomp::recompile_function(const N64Recomp::Context& context, size_t function_index, std::ostream& output_file, std::span<std::vector<uint32_t>> static_funcs_out, bool tag_reference_relocs) {
-    CGenerator generator{output_file};
+    CGenerator generator{output_file, context.gpr_32bit};
     return recompile_function_impl(generator, context, function_index, output_file, static_funcs_out, tag_reference_relocs);
 }
 
