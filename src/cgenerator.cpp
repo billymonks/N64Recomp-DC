@@ -482,9 +482,13 @@ void N64Recomp::CGenerator::emit_switch_error(uint32_t instr_vram, uint32_t jtbl
 }
 
 void N64Recomp::CGenerator::emit_return(const Context& context, size_t func_index) const {
-    (void)func_index;
     if (context.trace_mode) {
         fmt::print(output_file, "TRACE_RETURN()\n    ");
+    }
+    const std::string& return_hook = context.functions[func_index].return_hook;
+    if (!return_hook.empty()) {
+        fmt::print(output_file, "{{\n    {}    return;\n    }}\n", return_hook);
+        return;
     }
     fmt::print(output_file, "return;\n");
 }

@@ -16,6 +16,8 @@ namespace N64Recomp {
         std::string func_name;
         int32_t before_vram;
         std::string text;
+        // Run the text before every return from the function instead of before an instruction.
+        bool at_return;
     };
 
     struct FunctionSize {

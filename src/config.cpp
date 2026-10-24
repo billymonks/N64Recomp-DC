@@ -220,6 +220,7 @@ std::vector<N64Recomp::FunctionTextHook> get_function_hooks(const toml::table* p
                 std::optional<uint32_t> before_vram = cur_hook["before_vram"].value<uint32_t>();
                 std::optional<std::string> func_name = cur_hook["func"].value<std::string>();
                 std::optional<std::string> text = cur_hook["text"].value<std::string>();
+                bool at_return = cur_hook["at_return"].value_or(false);
 
                 if (!func_name.has_value() || !text.has_value()) {
                     throw toml::parse_error("Function hook is missing required value(s)", el.source());
@@ -234,6 +235,7 @@ std::vector<N64Recomp::FunctionTextHook> get_function_hooks(const toml::table* p
                     .func_name = func_name.value(),
                     .before_vram = before_vram.has_value() ? (int32_t)before_vram.value() : 0,
                     .text = text.value(),
+                    .at_return = at_return,
                 });
             }
             else {
