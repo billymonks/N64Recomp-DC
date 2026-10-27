@@ -512,6 +512,7 @@ int main(int argc, char** argv) {
     // Propogate the trace mode parameter.
     context.trace_mode = config.trace_mode;
     context.gpr_32bit = config.gpr_32bit;
+    context.codegen = config.codegen;
 
     // Apply any single-instruction patches.
     for (const N64Recomp::InstructionPatch& patch : config.instruction_patches) {
@@ -575,6 +576,11 @@ int main(int argc, char** argv) {
         else {
             func.function_hooks[instruction_index] = patch.text;
         }
+    }
+
+    if (context.codegen.regcache || context.codegen.abi_poison || context.codegen.abi_trace || !context.codegen.abi_report.empty()) {
+        N64Recomp::analyze_registers(context);
+        fmt::print("Register analysis: extra synced registers 0x{:08X}\n", context.regcache_extra_sync);
     }
 
     std::ofstream current_output_file;

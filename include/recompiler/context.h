@@ -11,6 +11,8 @@
 #include <filesystem>
 #include <optional>
 
+#include "recompiler/regalloc.h"
+
 #ifdef _MSC_VER
 inline uint32_t byteswap(uint32_t val) {
     return _byteswap_ulong(val);
@@ -268,6 +270,94 @@ namespace N64Recomp {
         // Emits code for a runtime whose gpr type is 32 bits wide. Instructions that need the upper half of a
         // 64-bit GPR (ld, sd, dsll, dmult, dmfc1, ...) are rejected instead of being recompiled.
         bool gpr_32bit = false;
+
+        // Code generation options for the Dreamcast runtime ([codegen] in the config). They all default to off,
+        // so other users of the library (tools/modrecomp) keep the plain output.
+        struct CodegenOptions {
+            // Each function declares `uint8_t* restrict const rb = rdram - 0x80000000` and the memory macros use it
+            // (RECOMP_RB); stack pointer decrements go through SP_ADJ so frame offsets stay positive.
+            bool rdram_base = false;
+            // sp-relative halfword and byte accesses fold the address swizzle into the offset. Needs sp to stay
+            // 4-byte aligned, which o32 guarantees.
+            bool sp_subword_fold = false;
+            // MIPS GPRs are C locals, synced with the context at calls, returns and hooks.
+            bool regcache = false;
+            // regcache = "gpr+fpr": FPRs as typed locals too.
+            bool fprcache = false;
+            // A conditional branch's delay slot is emitted once, after its condition is taken into a temporary,
+            // instead of once on each path.
+            bool delay_once = false;
+            // With regcache: callee-saved registers and ra aren't stored to and loaded from their N64 stack slots
+            // (the slots go stale); the entry value is kept in C, and a callee-saved local lives across calls.
+            bool skip_saves = false;
+            // How many callee-saved registers whose values live across a call a function keeps as locals.
+            int skip_saves_budget = 4;
+            // Indirect calls go through LOOKUP_FUNC_CACHED (recomp.h) instead of LOOKUP_FUNC.
+            bool lookup_cache = false;
+            // With regcache: v0 and v1 are written back at a function's returns only if some caller may read them
+            // after the call (directly, or after calling something that ends up returning through the function).
+            bool ret_trim = false;
+            // With regcache = "gpr+fpr": FPR locals are written back at a call only if the callee side reads them,
+            // they're callee-saved, or they're still needed after it; at a return only f0-f3, the callee-saved
+            // FPRs and what some caller reads after the call.
+            bool fpr_abi_sync = false;
+            // With regcache: functions without calls of at most this many instructions are RECOMP_LEAF_FUNC instead
+            // of RECOMP_FUNC (recomp.h), which lets the compiler inline them. 0 for none.
+            int inline_leaves = 0;
+            // Functions left on context-only output. When regcache_only isn't empty, only those functions use locals.
+            std::unordered_set<std::string> regcache_exclude;
+            std::unordered_set<std::string> regcache_only;
+            // Debug: after every call and at every function entry, overwrite the registers the o32 ABI says are
+            // dead with junk.
+            bool abi_poison = false;
+            // Taint the same registers instead and print where a tainted value is used (TRACE_* in recomp.h).
+            bool abi_trace = false;
+            // Where to write the register analysis report. Empty for none.
+            std::filesystem::path abi_report;
+        } codegen;
+
+        // Register analysis results (codegen.regcache or abi_report), by function index. Caller-saved GPRs that some
+        // function reads at entry or after a call are synced like arguments, only where they can matter:
+        // regcache_call_sync[f] before calls to f (what f or anything it calls reads at entry),
+        // regcache_exit_sync[f] at f's returns (what a caller reads after calling f or something that calls f),
+        // regcache_indirect_sync before indirect calls. regcache_extra_sync is the union, for the report.
+        std::vector<FunctionRegSummary> reg_summaries;
+        std::vector<GprMask> regcache_call_sync;
+        std::vector<GprMask> regcache_exit_sync;
+        GprMask regcache_indirect_sync = 0;
+        // The caller-saved registers (arguments included) each function's code or its callees read before writing
+        // them, and their union for indirect calls: what a call reads, for the liveness behind the sets above.
+        std::vector<GprMask> regcache_entry_needs;
+        GprMask regcache_indirect_needs = 0;
+        // The caller-saved registers each function writes on every path to its returns, and what every function
+        // whose address is taken writes: what a call to them ends; values in other registers can come through.
+        std::vector<GprMask> regcache_must_def;
+        GprMask regcache_indirect_must_def = 0;
+        // The GPRs each function or anything it calls may read or write (all of them for a function with a hook or
+        // one that calls code the analysis can't see), and the union for indirect calls. A call leaves the others
+        // alone, so a local for one of those needs no syncing around it.
+        std::vector<GprMask> regcache_may_touch;
+        GprMask regcache_indirect_may_touch = 0;
+        // codegen.skip_saves: the callee-saved registers each function or its callees read for their value (not
+        // only to save and restore them), and those it may return changed (code that doesn't preserve them, run by
+        // it or a callee without restoring them itself); unions for indirect calls. A caller's local of such a
+        // register is synced around the call.
+        std::vector<GprMask> regcache_cs_needs;
+        GprMask regcache_indirect_cs_needs = 0;
+        std::vector<GprMask> regcache_cs_clobber;
+        GprMask regcache_indirect_cs_clobber = 0;
+        // codegen.ret_trim: v0/v1 as some caller of each function may read them after the call.
+        std::vector<GprMask> regcache_ret_read;
+        // codegen.fpr_abi_sync, as masks of FPRs (bit n for f<n>): what each function or its callees read before
+        // writing, the caller-saved FPRs it writes on every path to its returns, and what callers read after
+        // calling it (or something that returns through it); unions and intersections for indirect calls.
+        std::vector<uint32_t> regcache_fpr_needs;
+        uint32_t regcache_indirect_fpr_needs = 0;
+        std::vector<uint32_t> regcache_fpr_must_def;
+        uint32_t regcache_indirect_fpr_must_def = 0;
+        std::vector<uint32_t> regcache_fpr_exit_sync;
+        GprMask regcache_extra_sync = 0;
+        bool regcache_ready = false;
 
         // Imports sections and function symbols from a provided context into this context's reference sections and reference functions.
         bool import_reference_context(const Context& reference_context);

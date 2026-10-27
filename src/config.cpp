@@ -425,6 +425,53 @@ N64Recomp::Config::Config(const char* path) {
         // Emit code for a 32-bit gpr runtime (optional)
         gpr_32bit = input_data["gpr_32bit"].value_or(false);
 
+        // Dreamcast code generation options (optional)
+        toml::node_view codegen_data = config_data["codegen"];
+        if (codegen_data.is_table()) {
+            auto read_names = [&](const char* key, std::unordered_set<std::string>& out) {
+                toml::node_view names = codegen_data[key];
+                if (!names) {
+                    return;
+                }
+                const toml::array* array = names.as_array();
+                if (array == nullptr) {
+                    throw toml::parse_error((std::string{key} + " must be an array of function names").c_str(), names.node()->source());
+                }
+                for (const auto& el : *array) {
+                    std::optional<std::string> name = el.value<std::string>();
+                    if (!name.has_value()) {
+                        throw toml::parse_error((std::string{key} + " must be an array of function names").c_str(), el.source());
+                    }
+                    out.insert(name.value());
+                }
+            };
+            codegen.rdram_base = codegen_data["rdram_base"].value_or(false);
+            codegen.sp_subword_fold = codegen_data["sp_subword_fold"].value_or(false);
+            std::string regcache = codegen_data["regcache"].value_or(std::string{"off"});
+            if (regcache == "gpr" || regcache == "gpr+fpr") {
+                codegen.regcache = true;
+                codegen.fprcache = regcache == "gpr+fpr";
+            }
+            else if (regcache != "off") {
+                throw toml::parse_error("regcache must be \"off\", \"gpr\" or \"gpr+fpr\"", codegen_data["regcache"].node()->source());
+            }
+            codegen.delay_once = codegen_data["delay_once"].value_or(false);
+            codegen.skip_saves = codegen.regcache && codegen_data["skip_saves"].value_or(false);
+            codegen.skip_saves_budget = (int)codegen_data["skip_saves_budget"].value_or(4);
+            codegen.lookup_cache = codegen_data["lookup_cache"].value_or(false);
+            codegen.ret_trim = codegen.regcache && codegen_data["ret_trim"].value_or(false);
+            codegen.fpr_abi_sync = codegen.fprcache && codegen_data["fpr_abi_sync"].value_or(false);
+            codegen.inline_leaves = codegen.regcache ? (int)codegen_data["inline_leaves"].value_or(0) : 0;
+            read_names("regcache_exclude", codegen.regcache_exclude);
+            read_names("regcache_only", codegen.regcache_only);
+            codegen.abi_poison = codegen_data["abi_poison"].value_or(false);
+            codegen.abi_trace = codegen_data["abi_trace"].value_or(false);
+            std::optional<std::string> abi_report_opt = codegen_data["abi_report"].value<std::string>();
+            if (abi_report_opt.has_value()) {
+                codegen.abi_report = concat_if_not_empty(basedir, abi_report_opt.value());
+            }
+        }
+
         // Function reference symbols file (optional)
         std::optional<std::string> func_reference_syms_file_opt = input_data["func_reference_syms_file"].value<std::string>();
         if (func_reference_syms_file_opt.has_value()) {

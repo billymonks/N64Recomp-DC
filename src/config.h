@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <vector>
 
+#include "recompiler/context.h"
+
 namespace N64Recomp {
     struct InstructionPatch {
         std::string func_name;
@@ -46,6 +48,7 @@ namespace N64Recomp {
         bool unpaired_lo16_warnings;
         bool trace_mode;
         bool gpr_32bit;
+        Context::CodegenOptions codegen;
         bool allow_exports;
         bool strict_patch_mode;
         std::filesystem::path elf_path;
